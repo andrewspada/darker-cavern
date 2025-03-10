@@ -35,6 +35,11 @@
   "event" "keyboardCode"
   (ref extern) -> (ref string))
 
+;; Console
+(define-foreign log
+  "console" "log"
+  (ref string) -> none)
+
 (define *canvas* (get-element-by-id "game"))
 (define *context* (get-context *canvas* "2d"))
 
@@ -49,30 +54,34 @@
            ((get-y) y)))
 
 (define *player* (with-vat my-vat
-                             (spawn ^player 0 0)))
+                           (spawn ^player 0 0)))
 
-(define (^painter bcom player context)
-  (methods ((repaint) (let ((x ($ player 'get-x))
-                            (y ($ player 'get-y)))
-                        (clear-rect context 0 0 500 500)
-                        (fill-rect context x y 150 100)))))
+(define (^painter bcom)
+  (methods ((repaint)
+            (log "meow")
+            #f)))
 
 (define *painter* (with-vat my-vat
-                    (spawn ^painter *player* *context*)))
-  
-
-(add-event-listener! (current-document)
-                     "keydown"
-                     (procedure->external
-                      (lambda (e)
-                        (with-vat my-vat
-                                  (let ((code (keyboard-event-code e)))
-                                    (cond
-                                     ((string=? code "ArrowDown") ($ *player* 'move-down))
-                                     ((string=? code "ArrowUp") ($ *player* 'move-up))
-                                     ((string=? code "ArrowLeft") ($ *player* 'move-left))
-                                     ((string=? code "ArrowRight") ($ *player* 'move-right))))
-                                  ($ *painter* 'repaint)))))
+                            (spawn ^painter)))
 
 (with-vat my-vat
+          (log (number->string ($ *player* 'get-x)))
+          (fill-rect *context* 0 0 150 200)
           ($ *painter* 'repaint))
+
+
+;; (add-event-listener! (current-document)
+;;                      "keydown"
+;;                      (procedure->external
+;;                       (lambda (e)
+;;                         (with-vat my-vat
+;;                                   (let ((code (keyboard-event-code e)))
+;;                                     (cond
+;;                                      ((string=? code "ArrowDown") ($ *player* 'move-down))
+;;                                      ((string=? code "ArrowUp") ($ *player* 'move-up))
+;;                                      ((string=? code "ArrowLeft") ($ *player* 'move-left))
+;;                                      ((string=? code "ArrowRight") ($ *player* 'move-right))))
+;;                                   ($ *painter* 'repaint)))))
+
+;; (with-vat my-vat
+;;           ($ *painter* 'repaint))

@@ -14,6 +14,43 @@ window.addEventListener("load", async () =>
                 fillRect: (ctx, x, y, w, h) => ctx.fillRect(x, y, w, h),
                 clearRect: (ctx, x, y, w, h) => ctx.clearRect(x, y, w, h),
             },
+            console: {
+                log: (msg) => console.log(msg)
+            },
+            webSocket: {
+                close(ws) { ws.close(); },
+                new(url) {
+                    ws = new WebSocket(url);
+                    ws.binaryType = "arraybuffer";
+                    return ws;
+                },
+                send(ws, data) { ws.send(data); },
+                setOnOpen(ws, f) { ws.onopen = (e) => { f(); }; },
+                setOnMessage(ws, f) { ws.onmessage = (e) => { f(e.data); }; },
+                setOnClose(ws, f) { ws.onclose = (e) => { f(e.code, e.reason); }; }
+            },
+            uint8Array: {
+                new: (length) => new Uint8Array(length),
+                fromArrayBuffer: (buffer) => new Uint8Array(buffer),
+                length: (array) => array.length,
+                ref: (array, index) => array[index],
+                set: (array, index, value) => array[index] = value
+            },
+            crypto: {
+                digest: (algorithm, data) => globalThis.crypto.subtle.digest(algorithm, data).then((arrBuf) => new Uint8Array(arrBuf)),
+                randomValues(length) {
+                    const array = new Uint8Array(length);
+                    globalThis.globalThis.crypto.subtle.getRandomValues(array);
+                    return array;
+                },
+                generateEd25519KeyPair: () => globalThis.crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]),
+                keyPairPrivateKey: (keyPair) => keyPair.privateKey,
+                keyPairPublicKey: (keyPair) => keyPair.publicKey,
+                exportKey: (key) => globalThis.crypto.subtle.exportKey("raw", key).then((arrBuf) => new Uint8Array(arrBuf)),
+                importPublicKey: (key) => globalThis.crypto.subtle.importKey("raw", key, { name: "Ed25519" }, true, ["verify"]),
+                signEd25519: (data, privateKey) => globalThis.crypto.subtle.sign({ name: "Ed25519" }, privateKey, data).then((arrBuf) => new Uint8Array(arrBuf)),
+                verifyEd25519: (signature, data, publicKey) => globalThis.crypto.subtle.verify({ name: "Ed25519" }, publicKey, signature, data)
+            }
         }
     })
 );
