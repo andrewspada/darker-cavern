@@ -13,6 +13,9 @@ window.addEventListener("load", async () =>
                 getContext: (elem, type) => elem.getContext(type),
                 fillRect: (ctx, x, y, w, h) => ctx.fillRect(x, y, w, h),
                 clearRect: (ctx, x, y, w, h) => ctx.clearRect(x, y, w, h),
+                fillStyle: (ctx, color) => ctx.fillStyle(color),
+                setTransform: (ctx, a, b, c, d, e, f) => ctx.setTransform(a, b, c, d, e, f),
+                drawImage: (ctx, image, dx, dy) => ctx.drawImage(image, dx, dy),
             },
             console: {
                 log: (msg) => console.log(msg)
@@ -30,8 +33,10 @@ window.addEventListener("load", async () =>
                 setOnClose(ws, f) { ws.onclose = (e) => { f(e.code, e.reason); }; }
             },
             window: {
-                requestAnimationFrame: (callback) => window.requestAnimationFrame(callback)
-                setInterval:
+                requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+                setInterval: (callback, delay) => window.setInterval(callback, delay),
+                fetch: (resource) => window.fetch(resource),
+                createImageBitmap: (image) => window.createImageBitmap(image),
             },
             uint8Array: {
                 new: (length) => new Uint8Array(length),
@@ -54,7 +59,18 @@ window.addEventListener("load", async () =>
                 importPublicKey: (key) => globalThis.crypto.subtle.importKey("raw", key, { name: "Ed25519" }, true, ["verify"]),
                 signEd25519: (data, privateKey) => globalThis.crypto.subtle.sign({ name: "Ed25519" }, privateKey, data).then((arrBuf) => new Uint8Array(arrBuf)),
                 verifyEd25519: (signature, data, publicKey) => globalThis.crypto.subtle.verify({ name: "Ed25519" }, publicKey, signature, data)
+            },
+            promise: {
+                then: (promise, onFulfilled, onRejected) => promise.then(onFulfilled, onRejected),
+            },
+            response: {
+                blob: (response) => response.blob(),
+            },
+            imageBitmap: {
+                height: (imageBitmap) => imageBitmap.height,
+                width: (imageBitmap) => imageBitmap.width,
             }
+
         }
     })
 );
