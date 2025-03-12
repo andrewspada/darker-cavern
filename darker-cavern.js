@@ -29,6 +29,10 @@ window.addEventListener("load", async () =>
                 setOnMessage(ws, f) { ws.onmessage = (e) => { f(e.data); }; },
                 setOnClose(ws, f) { ws.onclose = (e) => { f(e.code, e.reason); }; }
             },
+            window: {
+                requestAnimationFrame: (callback) => window.requestAnimationFrame(callback)
+                setInterval:
+            },
             uint8Array: {
                 new: (length) => new Uint8Array(length),
                 fromArrayBuffer: (buffer) => new Uint8Array(buffer),
