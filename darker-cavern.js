@@ -13,9 +13,10 @@ window.addEventListener("load", async () =>
                 getContext: (elem, type) => elem.getContext(type),
                 fillRect: (ctx, x, y, w, h) => ctx.fillRect(x, y, w, h),
                 clearRect: (ctx, x, y, w, h) => ctx.clearRect(x, y, w, h),
-                fillStyle: (ctx, color) => ctx.fillStyle(color),
+                setFillStyle: (ctx, color) => ctx.fillStyle = color,
                 setTransform: (ctx, a, b, c, d, e, f) => ctx.setTransform(a, b, c, d, e, f),
                 drawImage: (ctx, image, dx, dy) => ctx.drawImage(image, dx, dy),
+                fillText: (ctx, text, x, y) => ctx.fillText(text, x, y),
             },
             console: {
                 log: (msg) => console.log(msg)

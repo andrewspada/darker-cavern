@@ -1,9 +1,62 @@
 (use-modules (hoot ffi)
+             (hoot records)
              (goblins)
              (goblins actor-lib methods)
              (goblins actor-lib cell)
-             (ice-9 match)
-             (ice-9 receive))
+             (ice-9 match))
+
+(define-record-type <input-state>
+  (make-input-state up down left right space enter)
+  input-state?
+  (up input-state-up?)
+  (down input-state-down?)
+  (left input-state-left?)
+  (right input-state-right?)
+  (space input-state-space?)
+  (enter input-state-enter?))
+
+(define-record-type <rectangle/prim>
+  (make-rectangle/prim x y w h color transform)
+  rectangle/prim?
+  (x rectangle/prim-x)
+  (y rectangle/prim-y)
+  (w rectangle/prim-w)
+  (h rectangle/prim-h)
+  (color rectangle/prim-color)
+  (transform rectangle/prim-transform))
+
+(define-record-type <sprite/prim>
+  (make-sprite/prim name transform)
+  sprite/prim?
+  (name sprite/prim-name)
+  (transform sprite/prim-transform))
+
+(define-record-type <sprite>
+  (make-sprite texture origin)
+  sprite?
+  (texture sprite-texture)
+  (origin sprite-origin))
+
+(define-record-type <point>
+  (make-point x y)
+  point?
+  (x point-x)
+  (y point-y))
+
+(define-record-type <sound-event>
+  (make-sound-event name)
+  sound-event?
+  (name sound-event-name))
+
+(define-record-type <transform>
+  (make-transform a b c d e f)
+  transform?
+  (a transform-a)
+  (b transform-b)
+  (c transform-c)
+  (d transform-d)
+  (e transform-e)
+  (f transform-f))
 
 (define-syntax define-wrapper
   (syntax-rules ()
@@ -30,18 +83,19 @@
 
 (define-wrapper clear-rect clear-rect')
 
-(define-foreign fill-style'
-  "canvas" "fillStyle"
+(define-foreign set-fill-style!'
+  "canvas" "setFillStyle"
   (ref extern) (ref string) -> none)
 
-(define-wrapper fill-style fill-style')
+(define-wrapper set-fill-style! set-fill-style!')
 
 (define-foreign set-transform!'
   "canvas" "setTransform"
   (ref extern) f64 f64 f64 f64 f64 f64 -> none)
 
-(define (set-transform! transform)
-  (set-transform!' (transform-a transform)
+(define (set-transform! context transform)
+  (set-transform!' context
+                   (transform-a transform)
                    (transform-b transform)
                    (transform-c transform)
                    (transform-d transform)
@@ -54,6 +108,13 @@
   (ref extern) (ref extern) f64 f64 -> none)
 
 (define-wrapper draw-image draw-image')
+
+(define-foreign fill-text'
+  "canvas" "fillText"
+  (ref extern) (ref string) f64 f64 -> none)
+
+(define-wrapper fill-text fill-text')
+
 
 ;; Document
 (define-foreign get-element-by-id
@@ -98,7 +159,7 @@
 
 (define-foreign fetch
   "window" "fetch"
-  (ref extern) (ref string) -> (ref extern))
+  (ref string) -> (ref extern))
 
 (define-foreign create-image-bitmap
   "window" "createImageBitmap"
@@ -110,7 +171,7 @@
   (ref extern) (ref extern) (ref extern) -> (ref extern))
 
 ;; Response
-(define-foreign blob
+(define-foreign response->blob
   "response" "blob"
   (ref extern) -> (ref extern))
 
@@ -131,6 +192,9 @@
 (define tick-time (exact->inexact (/ 1 24)))
 (define saturation-time 1)
 
+(define identity-transform
+  (make-transform 1 0 0 1 0 0))
+
 (define client-vat (spawn-vat #:name "client-vat"))
 (define game-vat (spawn-vat #:name "game-vat"))
 
@@ -142,15 +206,10 @@
            ((get-x) x)
            ((get-y) y)))
 
-(define-record-type <input-state>
-  (make-input-state up down left right space enter)
-  input-state?
-  (input-state-up up)
-  (input-state-down down)
-  (input-state-left left)
-  (input-state-right right)
-  (input-state-space space)
-  (input-state-enter enter))
+(define (clear)
+  (set-transform! *context* identity-transform)
+  (clear-rect *context* 0 0 500 500))
+
 
 (define (^input-handler bcom)
   (define button-state:up (spawn ^cell #f))
@@ -192,30 +251,71 @@
 (define *input-handler* (with-vat client-vat
                                   (spawn ^input-handler)))
 
-(define (^game bcom)
+(define-actor (^game bcom #:optional (clock 0) (x 100) (y 100))
   (methods ((tick input-state)
-            '())
-           ((decscribe-scene)
-            '())))
+            (bcom (^game bcom
+                         (+ clock 1)
+                         (+ x
+                            (if (input-state-left? input-state) -1 0)
+                            (if (input-state-right? input-state) 1 0))
+                         (+ y
+                            (if (input-state-up? input-state) -1 0)
+                            (if (input-state-down? input-state) 1 0)))
+                  '()))
+           ((describe-scene)
+            (list (make-sprite/prim
+                   'Hii
+                   (let* ((theta (/ clock 100))
+                          (scale (+ 3 (sin (/ clock 70))))
+                          (s (* scale (sin theta)))
+                          (c (* scale (cos theta))))
+                     (make-transform c s (- s) c x y)))))))
 
 (define (draw-scene primitives)
+  (clear)
   (for-each draw-primitive primitives))
-
-(define (handle-events events)
-  (for-each handle-event events))
 
 (define (draw-primitive primitive)
   (cond
-   ((rectangle/prim? primitive) (draw-rectangle primitive))
-   ((sprite/prim? primitive) (draw-sprite primitive))
+   ((rectangle/prim? primitive) (draw-rectangle/prim primitive))
+   ((sprite/prim? primitive) (draw-sprite/prim primitive))
    (else (error "Unhandled primitive type" primitive))))
 
-(define (draw-rectangle rectangle/prim)
+(define (draw-rectangle/prim rectangle/prim)
+  (set-transform! *context* (rectangle/prim-transform rectangle/prim))
+  (set-fill-style! *context* (rectangle/prim-color rectangle/prim))
+  (fill-rect *context*
+             (rectangle/prim-x rectangle/prim)
+             (rectangle/prim-y rectangle/prim)
+             (rectangle/prim-w rectangle/prim)
+             (rectangle/prim-h rectangle/prim)))
+
+(define (draw-sprite/prim sprite/prim)
+  (set-transform! *context* (sprite/prim-transform sprite/prim))
+  (cond
+   ((lookup-sprite (sprite/prim-name sprite/prim)) => draw-sprite)
+   (else (draw-missing-sprite (sprite/prim-name sprite/prim)))))
+
+(define (draw-sprite sprite)
+  (draw-image *context*
+              (sprite-texture sprite)
+              (- (point-x (sprite-origin sprite)))
+              (- (point-y (sprite-origin sprite)))))
+
+(define (draw-missing-sprite name)
+  (set-fill-style! *context* "red")
+  (fill-text *context*
+             (symbol->string name)
+             0
+             10)
+  (fill-rect *context*
+             -1 -1 2 2))
+
+(define (lookup-sprite name)
   #f)
 
-(define (draw-sprite sprite/prim)
-  (set-transform! (sprite/prim-transform sprite/prim))
-  (
+(define (handle-events events)
+  (for-each handle-event events))
 
  (define (handle-event event)
   (cond
@@ -224,48 +324,6 @@
 
 (define (handle-sound-event sound-event)
   ($ *audio-player* 'play-sound (sound-event-name sound-event)))
-
-(define-record-type <rectangle/prim>
-  (make-rectangle/prim x y w h color)
-  rectangle/prim?
-  (rectangle/prim-x x)
-  (rectangle/prim-y y)
-  (rectangle/prim-w w)
-  (rectangle/prim-h h)
-  (rectangle/prim-color color))
-
-(define-record-type <sprite/prim>
-  (make-sprite/prim name transform)
-  sprite/prim?
-  (sprite/prim-name name)
-  (sprite/prim-transform transform))
-
-(define-record-type <sprite>
-  (make-sprite texture origin)
-  sprite?
-  (sprite-texture texture)
-  (sprite-origin origin))
-
-(define-record-type <point>
-  (make-point x y)
-  point?
-  (point-x x)
-  (point-y y))
-
-(define-record-type <sound-event>
-  (make-sound-event name)
-  sound-event?
-  (sound-event-name name))
-
-(define-record-type <transform>
-  (make-transform a b c d e f)
-  transform?
-  (transform-a a)
-  (transform-b b)
-  (transform-c c)
-  (transform-d d)
-  (transform-e e)
-  (transform-f f))
 
 (define (^audio-player bcom)
   (methods ((play-sound name)
@@ -287,7 +345,8 @@
                              (<- *game*
                                  'tick
                                  ($ *input-handler* 'get-input-state))
-                             handle-events)))))
+                             handle-events))))
+               10)
 
 
 (add-event-listener! (current-document)
@@ -302,13 +361,16 @@
                       (lambda (e)
                         (<-np-extern *input-handler* 'on-key-up (keyboard-event-code e)))))
 
-(request-animation-frame (procedure->external
-                          (lambda (timestamp)
-                            (with-vat client-vat
-                                      (on
-                                       (<- *game*
-                                           'describe-scene)
-                                       draw-scene)))))
+(define (animation-frame-callback timestamp)
+  (setup-animation-frame-callback)
+  (log "animation frame callback entered")
+  (with-vat client-vat
+            (on
+             (<- *game*
+                 'describe-scene)
+             draw-scene)))
 
-(with-vat my-vat
-           ($ *painter* 'repaint))
+(define (setup-animation-frame-callback)
+  (request-animation-frame (procedure->external animation-frame-callback)))
+
+(setup-animation-frame-callback)

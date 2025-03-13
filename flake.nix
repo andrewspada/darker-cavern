@@ -17,9 +17,6 @@
           pkgs.guile-fibers
           pkgs.guile-gnutls
         ];
-        shellHook = ''
-          exec zsh
-        '';
       };
   };
 }
