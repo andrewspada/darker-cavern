@@ -1,6 +1,14 @@
 window.addEventListener("load", async () =>
     await Scheme.load_main("darker-cavern.wasm", {
         user_imports: {
+            audio: {
+                makeAudioContext: () => new AudioContext(),
+                decodeAudioData: (audioContext, arrayBuffer) => audioContext.decodeAudioData(arrayBuffer),
+                makeAudioBufferSourceNode: (audioContext, audioBuffer) => new AudioBufferSourceNode(audioContext, {buffer: audioBuffer}),
+                startAudioBuffer: (audioBufferSourceNode) => audioBufferSourceNode.start(),
+                destination: (baseAudioContext) => baseAudioContext.destination,
+                connect: (audioNode, destination) => audioNode.connect(destination),
+            },
             document: {
                 get: () => document,
                 getElementById: (id) => document.getElementById(id),
@@ -67,6 +75,7 @@ window.addEventListener("load", async () =>
             response: {
                 blob: (response) => response.blob(),
                 ok: (response) => response.ok,
+                arrayBuffer: (response) => response.arrayBuffer(),
             },
             imageBitmap: {
                 height: (imageBitmap) => imageBitmap.height,

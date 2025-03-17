@@ -4,6 +4,7 @@
              (goblins actor-lib methods)
              (goblins actor-lib cell)
              (goblins actor-lib let-on)
+             (goblins actor-lib joiners)
              (ice-9 match))
 
 (define-record-type <input-state>
@@ -65,6 +66,38 @@
      (define (wrapper . args)
        (apply wrapped args)
        #f))))
+
+;; Audio
+(define-foreign make-audio-context
+  "audio" "makeAudioContext"
+  -> (ref extern))
+
+(define-foreign %decode-audio-data
+  "audio" "decodeAudioData"
+  (ref extern) (ref extern) -> (ref extern))
+
+(define (decode-audio-data audio-context array-buffer)
+  (extern->promise (%decode-audio-data audio-context array-buffer)))
+
+(define-foreign make-audio-buffer-source-node
+  "audio" "makeAudioBufferSourceNode"
+  (ref extern) (ref extern) -> (ref extern))
+
+(define-foreign %start-audio-buffer
+  "audio" "startAudioBuffer"
+  (ref extern) -> none)
+
+(define-wrapper start-audio-buffer %start-audio-buffer)
+
+(define-foreign audio-context-destination
+  "audio" "destination"
+  (ref extern) -> (ref extern))
+
+(define-foreign %connect-audio-node
+  "audio" "connect"
+  (ref extern) (ref extern) -> none)
+
+(define-wrapper connect-audio-node %connect-audio-node)
 
 ;; HTMLCanvasElement
 (define-foreign get-context
@@ -208,6 +241,13 @@
 (define (response-ok? response)
   (eq? (%response-ok? response) 1))
 
+(define-foreign %response->array-buffer-promise
+  "response" "arrayBuffer"
+  (ref extern) -> (ref extern))
+
+(define (response->array-buffer-promise response)
+  (extern->promise (%response->array-buffer-promise response)))
+
 ;; ImageBitmap
 (define-foreign image-bitmap-height
   "imageBitmap" "height"
@@ -219,6 +259,7 @@
 
 (define *canvas* (get-element-by-id "game"))
 (define *context* (get-context *canvas* "2d"))
+(define *audio-context* (make-audio-context))
 
 (define tick-time (exact->inexact (/ 1 24)))
 (define saturation-time 1)
@@ -291,7 +332,9 @@
                          (+ y
                             (if (input-state-up? input-state) -1 0)
                             (if (input-state-down? input-state) 1 0)))
-                  '()))
+                  (if (= 1 (remainder clock 50))
+                      (list (make-sound-event 'meow))
+                      '())))
            ((describe-scene)
             (list (make-sprite/prim
                    'snep
@@ -306,7 +349,7 @@
   (methods ((put name resource)
             (bcom (^resource-store bcom (acons name resource resource-list))))
            ((get name)
-            (assq-ref resource-list name))))
+            (assoc-ref resource-list name))))
 
 (define *resource-store* (with-vat client-vat
                                    (spawn ^resource-store)))
@@ -357,19 +400,28 @@
      name))
 
 (define (handle-events events)
+  (log (format #f "handle-events ~a" events))
   (for-each handle-event events))
 
- (define (handle-event event)
+(define (handle-event event)
+  (log (format #f "handle-event ~a" event))
   (cond
    ((sound-event? event) (handle-sound-event event))
    (else (error "Unhandled event type" event))))
 
 (define (handle-sound-event sound-event)
+  (log (format #f "handle-sound-event ~a" sound-event))
   ($ *audio-player* 'play-sound (sound-event-name sound-event)))
 
 (define (^audio-player bcom)
-  (methods ((play-sound name)
-            #f)))
+  (methods
+   ((play-sound name)
+    (let ((source (make-audio-buffer-source-node
+                   *audio-context*
+                   ($ *resource-store* 'get name)))
+          (destination (audio-context-destination *audio-context*)))
+      (connect-audio-node source destination)
+      (start-audio-buffer source)))))
 
 (define *audio-player*
   (with-vat client-vat
@@ -423,14 +475,50 @@
   (setup-keyup-callback)
   (setup-animation-frame-callback))
 
-(with-vat client-vat
-  (let-on ((response (fetch "assets/snep.jpeg")))
+(define (load-resource name url ok-response->resource-vow)
+  (let-on ((response (fetch url)))
     (unless (response-ok? response)
-      (error "response not ok"))
+      (error "response not ok" name url))
+    (let-on ((resource (ok-response->resource-vow response)))
+      ($ *resource-store* 'put name resource))))
+
+(define* (load-sprite name url #:optional origin)
+  (define (ok-response->sprite-vow response)
     (let*-on ((blob (response->blob-promise response))
               (texture (create-image-bitmap blob)))
-      ($ *resource-store* 'put 'snep
-         (make-sprite texture
-                      (make-point (/ (image-bitmap-width texture) 2)
-                                  (/ (image-bitmap-height texture) 2))))
-      (setup-game-callbacks))))
+      (make-sprite texture
+                   (or origin
+                       (make-point (/ (image-bitmap-width texture) 2)
+                                   (/ (image-bitmap-height texture) 2))))))
+  (load-resource name url ok-response->sprite-vow))
+
+(define (load-sound name url)
+  (define (ok-response->sound-vow response)
+    (let-on ((array-buffer (response->array-buffer-promise response)))
+      (decode-audio-data *audio-context* array-buffer)))
+  (load-resource name url ok-response->sound-vow))
+
+(with-vat client-vat
+  (define snep-vow (load-sprite 'snep "assets/snep.jpeg"))
+  (define meow-vow (load-sound 'meow "assets/meow.ogg"))
+  (define-values (click-promise click-resolver)
+    (spawn-promise-and-resolver))
+  (add-event-listener! *canvas*
+                       "click"
+                       (lambda/external (e)
+                         (<-np-extern click-resolver
+                                      'fulfill
+                                      'clicked)))
+  (log (format #f "snep-vow ~a" snep-vow))
+  (log (format #f "meow-vow ~a" meow-vow))
+  (on (all-of snep-vow meow-vow click-promise)
+      (lambda _
+        (setup-game-callbacks))))
+
+
+;; Local Variables:
+;; eval: (put 'with-vat 'scheme-indent-function 1)
+;; eval: (put 'let-on 'scheme-indent-function 1)
+;; eval: (put 'let*-on 'scheme-indent-function 1)
+;; eval: (put 'lambda/external 'scheme-indent-function 1)
+;; End:
