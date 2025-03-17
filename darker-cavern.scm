@@ -3,6 +3,7 @@
              (goblins)
              (goblins actor-lib methods)
              (goblins actor-lib cell)
+             (goblins actor-lib let-on)
              (ice-9 match))
 
 (define-record-type <input-state>
@@ -157,13 +158,35 @@
 
 (define-wrapper set-interval! set-interval!')
 
-(define-foreign fetch
+(define-foreign %fetch
   "window" "fetch"
   (ref string) -> (ref extern))
 
-(define-foreign create-image-bitmap
+(define (extern->promise extern)
+  (define-values (a-promise a-resolver)
+    (spawn-promise-and-resolver))
+  (then extern
+        (lambda/external (result)
+          (<-np-extern a-resolver 'fulfill result))
+        (lambda/external (problem)
+           (<-np-extern a-resolver 'break problem)))
+  a-promise)
+
+(define-syntax lambda/external
+  (syntax-rules ()
+    ((lambda/external rest ...)
+     (procedure->external
+      (lambda rest ...)))))
+
+(define (fetch resource)
+  (extern->promise (%fetch resource)))
+
+(define-foreign %create-image-bitmap
   "window" "createImageBitmap"
   (ref extern) -> (ref extern))
+
+(define (create-image-bitmap image)
+  (extern->promise (%create-image-bitmap image)))
 
 ;; Promise
 (define-foreign then
@@ -171,9 +194,19 @@
   (ref extern) (ref extern) (ref extern) -> (ref extern))
 
 ;; Response
-(define-foreign response->blob
+(define-foreign %response->blob-promise
   "response" "blob"
   (ref extern) -> (ref extern))
+
+(define (response->blob-promise response)
+  (extern->promise (%response->blob-promise response)))
+
+(define-foreign %response-ok?
+  "response" "ok"
+  (ref extern) -> i32)
+
+(define (response-ok? response)
+  (eq? (%response-ok? response) 1))
 
 ;; ImageBitmap
 (define-foreign image-bitmap-height
@@ -183,8 +216,6 @@
 (define-foreign image-bitmap-width
   "imageBitmap" "width"
   (ref extern) -> f64)
-
-
 
 (define *canvas* (get-element-by-id "game"))
 (define *context* (get-context *canvas* "2d"))
@@ -209,7 +240,6 @@
 (define (clear)
   (set-transform! *context* identity-transform)
   (clear-rect *context* 0 0 500 500))
-
 
 (define (^input-handler bcom)
   (define button-state:up (spawn ^cell #f))
@@ -264,12 +294,22 @@
                   '()))
            ((describe-scene)
             (list (make-sprite/prim
-                   'Hii
+                   'snep
                    (let* ((theta (/ clock 100))
-                          (scale (+ 3 (sin (/ clock 70))))
+                          (scale (+ 1 (sin (/ clock 70))))
                           (s (* scale (sin theta)))
                           (c (* scale (cos theta))))
                      (make-transform c s (- s) c x y)))))))
+
+
+(define* (^resource-store bcom #:optional (resource-list '()))
+  (methods ((put name resource)
+            (bcom (^resource-store bcom (acons name resource resource-list))))
+           ((get name)
+            (assq-ref resource-list name))))
+
+(define *resource-store* (with-vat client-vat
+                                   (spawn ^resource-store)))
 
 (define (draw-scene primitives)
   (clear)
@@ -312,7 +352,9 @@
              -1 -1 2 2))
 
 (define (lookup-sprite name)
-  #f)
+  ($ *resource-store*
+     'get
+     name))
 
 (define (handle-events events)
   (for-each handle-event events))
@@ -338,32 +380,34 @@
             (spawn ^game)))
 
 
-(set-interval! (procedure->external
-                (lambda ()
-                  (with-vat client-vat
-                            (on
-                             (<- *game*
-                                 'tick
-                                 ($ *input-handler* 'get-input-state))
-                             handle-events))))
-               10)
+(define (setup-game-event-handler)
+  (set-interval! (procedure->external
+                  (lambda ()
+                    (with-vat client-vat
+                              (on
+                               (<- *game*
+                                   'tick
+                                   ($ *input-handler* 'get-input-state))
+                               handle-events))))
+                 10))
 
 
-(add-event-listener! (current-document)
-                     "keydown"
-                     (procedure->external
-                      (lambda (e)
-                        (<-np-extern *input-handler* 'on-key-down (keyboard-event-code e)))))
+(define (setup-keydown-callback)
+  (add-event-listener! (current-document)
+                       "keydown"
+                       (procedure->external
+                        (lambda (e)
+                          (<-np-extern *input-handler* 'on-key-down (keyboard-event-code e))))))
 
-(add-event-listener! (current-document)
-                     "keyup"
-                     (procedure->external
-                      (lambda (e)
-                        (<-np-extern *input-handler* 'on-key-up (keyboard-event-code e)))))
+(define (setup-keyup-callback)
+  (add-event-listener! (current-document)
+                       "keyup"
+                       (procedure->external
+                        (lambda (e)
+                          (<-np-extern *input-handler* 'on-key-up (keyboard-event-code e))))))
 
 (define (animation-frame-callback timestamp)
   (setup-animation-frame-callback)
-  (log "animation frame callback entered")
   (with-vat client-vat
             (on
              (<- *game*
@@ -373,4 +417,20 @@
 (define (setup-animation-frame-callback)
   (request-animation-frame (procedure->external animation-frame-callback)))
 
-(setup-animation-frame-callback)
+(define (setup-game-callbacks)
+  (setup-game-event-handler)
+  (setup-keydown-callback)
+  (setup-keyup-callback)
+  (setup-animation-frame-callback))
+
+(with-vat client-vat
+  (let-on ((response (fetch "assets/snep.jpeg")))
+    (unless (response-ok? response)
+      (error "response not ok"))
+    (let*-on ((blob (response->blob-promise response))
+              (texture (create-image-bitmap blob)))
+      ($ *resource-store* 'put 'snep
+         (make-sprite texture
+                      (make-point (/ (image-bitmap-width texture) 2)
+                                  (/ (image-bitmap-height texture) 2))))
+      (setup-game-callbacks))))

@@ -66,6 +66,7 @@ window.addEventListener("load", async () =>
             },
             response: {
                 blob: (response) => response.blob(),
+                ok: (response) => response.ok,
             },
             imageBitmap: {
                 height: (imageBitmap) => imageBitmap.height,
