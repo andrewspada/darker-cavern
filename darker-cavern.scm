@@ -1,10 +1,17 @@
-(use-modules (hoot ffi)
-             (hoot records)
-             (goblins)
-             (goblins actor-lib methods)
+(use-modules (dom audio)
+             (dom canvas)
+             (dom console)
+             (dom document)
+             (dom event)
+             (dom image-bitmap)
+             (dom response)
+             (dom window)
              (goblins actor-lib cell)
-             (goblins actor-lib let-on)
              (goblins actor-lib joiners)
+             (goblins actor-lib let-on)
+             (goblins actor-lib methods)
+             (goblins)
+             (hoot records)
              (ice-9 match))
 
 (define-record-type <input-state>
@@ -49,213 +56,6 @@
   (make-sound-event name)
   sound-event?
   (name sound-event-name))
-
-(define-record-type <transform>
-  (make-transform a b c d e f)
-  transform?
-  (a transform-a)
-  (b transform-b)
-  (c transform-c)
-  (d transform-d)
-  (e transform-e)
-  (f transform-f))
-
-(define-syntax define-wrapper
-  (syntax-rules ()
-    ((define-wrapper wrapper wrapped)
-     (define (wrapper . args)
-       (apply wrapped args)
-       #f))))
-
-;; Audio
-(define-foreign make-audio-context
-  "audio" "makeAudioContext"
-  -> (ref extern))
-
-(define-foreign %decode-audio-data
-  "audio" "decodeAudioData"
-  (ref extern) (ref extern) -> (ref extern))
-
-(define (decode-audio-data audio-context array-buffer)
-  (extern->promise (%decode-audio-data audio-context array-buffer)))
-
-(define-foreign make-audio-buffer-source-node
-  "audio" "makeAudioBufferSourceNode"
-  (ref extern) (ref extern) -> (ref extern))
-
-(define-foreign %start-audio-buffer
-  "audio" "startAudioBuffer"
-  (ref extern) -> none)
-
-(define-wrapper start-audio-buffer %start-audio-buffer)
-
-(define-foreign audio-context-destination
-  "audio" "destination"
-  (ref extern) -> (ref extern))
-
-(define-foreign %connect-audio-node
-  "audio" "connect"
-  (ref extern) (ref extern) -> none)
-
-(define-wrapper connect-audio-node %connect-audio-node)
-
-;; HTMLCanvasElement
-(define-foreign get-context
-  "canvas" "getContext"
-  (ref extern) (ref string) -> (ref extern))
-
-;; CanvasRenderingContext2D
-(define-foreign fill-rect'
-  "canvas" "fillRect"
-  (ref extern) f64 f64 f64 f64 -> none)
-
-(define-wrapper fill-rect fill-rect')
-
-(define-foreign clear-rect'
-  "canvas" "clearRect"
-  (ref extern) f64 f64 f64 f64 -> none)
-
-(define-wrapper clear-rect clear-rect')
-
-(define-foreign set-fill-style!'
-  "canvas" "setFillStyle"
-  (ref extern) (ref string) -> none)
-
-(define-wrapper set-fill-style! set-fill-style!')
-
-(define-foreign set-transform!'
-  "canvas" "setTransform"
-  (ref extern) f64 f64 f64 f64 f64 f64 -> none)
-
-(define (set-transform! context transform)
-  (set-transform!' context
-                   (transform-a transform)
-                   (transform-b transform)
-                   (transform-c transform)
-                   (transform-d transform)
-                   (transform-e transform)
-                   (transform-f transform))
-  #f)
-
-(define-foreign draw-image'
-  "canvas" "drawImage"
-  (ref extern) (ref extern) f64 f64 -> none)
-
-(define-wrapper draw-image draw-image')
-
-(define-foreign fill-text'
-  "canvas" "fillText"
-  (ref extern) (ref string) f64 f64 -> none)
-
-(define-wrapper fill-text fill-text')
-
-
-;; Document
-(define-foreign get-element-by-id
-  "document" "getElementById"
-  (ref string) -> (ref null extern))
-
-(define-foreign current-document
-  "document" "get"
-  -> (ref extern))
-
-;; EventTarget
-(define-foreign add-event-listener!'
-  "event" "addEventListener"
-  (ref extern) (ref string) (ref extern) -> none)
-
-(define-wrapper add-event-listener! add-event-listener!')
-
-;; KeyboardEvent
-(define-foreign keyboard-event-code
-  "event" "keyboardCode"
-  (ref extern) -> (ref string))
-
-;; Console
-(define-foreign log'
-  "console" "log"
-  (ref string) -> none)
-
-(define-wrapper log log')
-
-;; Window
-(define-foreign request-animation-frame'
-  "window" "requestAnimationFrame"
-  (ref extern) -> none)
-
-(define-wrapper request-animation-frame request-animation-frame')
-
-(define-foreign set-interval!'
-  "window" "setInterval"
-  (ref extern) f64 -> none)
-
-(define-wrapper set-interval! set-interval!')
-
-(define-foreign %fetch
-  "window" "fetch"
-  (ref string) -> (ref extern))
-
-(define (extern->promise extern)
-  (define-values (a-promise a-resolver)
-    (spawn-promise-and-resolver))
-  (then extern
-        (lambda/external (result)
-          (<-np-extern a-resolver 'fulfill result))
-        (lambda/external (problem)
-           (<-np-extern a-resolver 'break problem)))
-  a-promise)
-
-(define-syntax lambda/external
-  (syntax-rules ()
-    ((lambda/external rest ...)
-     (procedure->external
-      (lambda rest ...)))))
-
-(define (fetch resource)
-  (extern->promise (%fetch resource)))
-
-(define-foreign %create-image-bitmap
-  "window" "createImageBitmap"
-  (ref extern) -> (ref extern))
-
-(define (create-image-bitmap image)
-  (extern->promise (%create-image-bitmap image)))
-
-;; Promise
-(define-foreign then
-  "promise" "then"
-  (ref extern) (ref extern) (ref extern) -> (ref extern))
-
-;; Response
-(define-foreign %response->blob-promise
-  "response" "blob"
-  (ref extern) -> (ref extern))
-
-(define (response->blob-promise response)
-  (extern->promise (%response->blob-promise response)))
-
-(define-foreign %response-ok?
-  "response" "ok"
-  (ref extern) -> i32)
-
-(define (response-ok? response)
-  (eq? (%response-ok? response) 1))
-
-(define-foreign %response->array-buffer-promise
-  "response" "arrayBuffer"
-  (ref extern) -> (ref extern))
-
-(define (response->array-buffer-promise response)
-  (extern->promise (%response->array-buffer-promise response)))
-
-;; ImageBitmap
-(define-foreign image-bitmap-height
-  "imageBitmap" "height"
-  (ref extern) -> f64)
-
-(define-foreign image-bitmap-width
-  "imageBitmap" "width"
-  (ref extern) -> f64)
 
 (define *canvas* (get-element-by-id "game"))
 (define *context* (get-context *canvas* "2d"))
@@ -344,12 +144,49 @@
                           (c (* scale (cos theta))))
                      (make-transform c s (- s) c x y)))))))
 
+(define (^player/intent bcom direction shooting?)
+  (methods ((move new-direction)
+            (bcom (^player/intent bcom new-direction shooting?)))
+           ((shoot)
+            (bcom (^player/intent bcom direction #t)))
+           ((direction)
+            direction)
+           ((shooting?)
+            shooting?)
+           ((clear-shooting)
+            (bcom (^player/intent bcom direction #f)))))
+
+(define (^robot/intent bcom direction shooting?)
+  (methods ((move new-direction)
+            (bcom (^robot/intent bcom new-direction shooting?)))
+           ((shoot)
+            (bcom (^robot/intent bcom direction #t)))
+           ((direction)
+            direction)
+           ((shooting?)
+            shooting?)
+           ((clear-shooting)
+            (bcom (^robot/intent bcom direction #f)))))
+
+(define (^spider/intent bcom direction)
+  (methods ((move new-direction)
+            (bcom (^spider/intent bcom new-direction)))
+           (direction)
+           direction))
+
+(define (^blob/intent bcom direction)
+  (methods ((move new-direction)
+            (bcom (^blob/intent bcom new-direction)))
+           (direction)
+           direction))
 
 (define* (^resource-store bcom #:optional (resource-list '()))
   (methods ((put name resource)
             (bcom (^resource-store bcom (acons name resource resource-list))))
            ((get name)
             (assoc-ref resource-list name))))
+
+
 
 (define *resource-store* (with-vat client-vat
                                    (spawn ^resource-store)))
@@ -484,7 +321,7 @@
 
 (define* (load-sprite name url #:optional origin)
   (define (ok-response->sprite-vow response)
-    (let*-on ((blob (response->blob-promise response))
+    (let*-on ((blob (response->blob-vow response))
               (texture (create-image-bitmap blob)))
       (make-sprite texture
                    (or origin
@@ -494,14 +331,14 @@
 
 (define (load-sound name url)
   (define (ok-response->sound-vow response)
-    (let-on ((array-buffer (response->array-buffer-promise response)))
+    (let-on ((array-buffer (response->array-buffer-vow response)))
       (decode-audio-data *audio-context* array-buffer)))
   (load-resource name url ok-response->sound-vow))
 
 (with-vat client-vat
   (define snep-vow (load-sprite 'snep "assets/snep.jpeg"))
   (define meow-vow (load-sound 'meow "assets/meow.ogg"))
-  (define-values (click-promise click-resolver)
+  (define-values (click-vow click-resolver)
     (spawn-promise-and-resolver))
   (add-event-listener! *canvas*
                        "click"
@@ -511,7 +348,7 @@
                                       'clicked)))
   (log (format #f "snep-vow ~a" snep-vow))
   (log (format #f "meow-vow ~a" meow-vow))
-  (on (all-of snep-vow meow-vow click-promise)
+  (on (all-of snep-vow meow-vow click-vow)
       (lambda _
         (setup-game-callbacks))))
 
